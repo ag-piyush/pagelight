@@ -2,7 +2,7 @@
 
 **Ask your PDFs anything, completely offline.**
 
-![pagelight answering a question with page citations](docs/demo.gif)
+![pagelight answering a question with page citations](https://raw.githubusercontent.com/ag-piyush/pagelight/main/docs/demo.gif)
 
 ---
 
@@ -264,4 +264,4 @@ pagelight is built on [PyMuPDF](https://github.com/pymupdf/PyMuPDF) for text ext
 
 ## License
 
-pagelight is licensed under [AGPL-3.0](LICENSE) because it depends on PyMuPDF, which is AGPL. The bundled pdf.js (Apache-2.0) and KaTeX (MIT) keep their own licenses; see `pagelight/static/vendor/`.
+pagelight is licensed under [AGPL-3.0](https://github.com/ag-piyush/pagelight/blob/main/LICENSE) because it depends on PyMuPDF, which is AGPL. The bundled pdf.js (Apache-2.0) and KaTeX (MIT) keep their own licenses; see `pagelight/static/vendor/`.
