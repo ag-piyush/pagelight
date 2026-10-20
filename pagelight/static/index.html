@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="session-token" content="__SESSION_TOKEN__">
+  <title>pagelight</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/vendor/pdfjs/pdf_viewer.css">
+  <link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/vendor/katex/katex.min.js" defer></script>
+  <script type="module" src="/static/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="tb-left">
+      <span class="mark" aria-hidden="true"></span>
+      <h1 id="docTitle" class="doc-title">Loading…</h1>
+      <button id="tocBtn" class="icon-btn" title="Contents" aria-label="Contents" hidden>
+        <svg viewBox="0 0 20 20"><path d="M3 5h14M3 10h10M3 15h12"/></svg>
+      </button>
+      <div id="tocPanel" class="popover toc" hidden></div>
+    </div>
+
+    <div class="tb-center">
+      <div class="pager">
+        <button id="prevPage" class="icon-btn" title="Previous page (←)" aria-label="Previous page">
+          <svg viewBox="0 0 20 20"><path d="M12 4l-6 6 6 6"/></svg>
+        </button>
+        <input id="pageInput" type="text" inputmode="numeric" value="1" aria-label="Page number">
+        <span class="of">/ <span id="pageCount">–</span></span>
+        <button id="nextPage" class="icon-btn" title="Next page (→)" aria-label="Next page">
+          <svg viewBox="0 0 20 20"><path d="M8 4l6 6-6 6"/></svg>
+        </button>
+      </div>
+      <div class="zoom">
+        <button id="zoomOut" class="icon-btn" title="Zoom out" aria-label="Zoom out">
+          <svg viewBox="0 0 20 20"><path d="M5 10h10"/></svg>
+        </button>
+        <button id="zoomLabel" class="zoom-label" title="Fit to width">100%</button>
+        <button id="zoomIn" class="icon-btn" title="Zoom in" aria-label="Zoom in">
+          <svg viewBox="0 0 20 20"><path d="M5 10h10M10 5v10"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="tb-right">
+      <label class="find">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5"/><path d="M12.5 12.5L17 17"/></svg>
+        <input id="findInput" type="search" placeholder="Find in PDF" aria-label="Find in PDF">
+        <span id="findCount" class="find-count"></span>
+      </label>
+      <button id="nightBtn" class="icon-btn" title="Dim pages" aria-label="Dim pages" aria-pressed="false">
+        <svg viewBox="0 0 20 20"><path d="M15.5 12.5A6.5 6.5 0 017.5 4.5a6.5 6.5 0 108 8z"/></svg>
+      </button>
+      <button id="chatToggle" class="icon-btn" title="Toggle chat" aria-label="Toggle chat" aria-pressed="true">
+        <svg viewBox="0 0 20 20"><path d="M4 4h12v9H9l-4 3v-3H4z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="split">
+    <section id="viewerWrap" class="viewer-wrap">
+      <div id="viewerContainer" tabindex="0">
+        <div id="viewer" class="pdfViewer"></div>
+      </div>
+      <button id="askSelection" class="ask-pop" hidden>
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 4h12v9H9l-4 3v-3H4z"/></svg>
+        Ask about this
+      </button>
+      <div id="viewerError" class="viewer-error" hidden></div>
+    </section>
+
+    <div id="resizer" class="resizer" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
+
+    <aside id="chat" class="chat">
+      <div class="chat-head">
+        <div class="chips">
+          <span class="chip live" title="Everything runs on this machine"><i></i>Local</span>
+          <span id="modelChip" class="chip mono">…</span>
+          <span id="searchChip" class="chip"></span>
+        </div>
+        <button id="newChat" class="text-btn" title="Clear this conversation">New chat</button>
+      </div>
+
+      <div id="messages" class="messages" aria-live="polite">
+        <div id="emptyState" class="empty">
+          <p class="empty-title">Ask anything about this PDF</p>
+          <p class="empty-sub">Answers come from a model running on your machine and cite the pages they use. Select text in the document to ask about that passage.</p>
+          <div class="suggestions">
+            <button data-q="Summarize this page.">Summarize this page</button>
+            <button data-q="What is this document about, and what are its main points?">What is this about?</button>
+            <button data-q="Explain the key terms and concepts on this page.">Explain key terms here</button>
+            <button data-q="What are the main limitations or open questions raised in this document?">Limitations &amp; open questions</button>
+          </div>
+        </div>
+      </div>
+
+      <form id="composer" class="composer">
+        <div class="context-row">
+          <span id="pageCtx" class="ctx-chip">Page 1</span>
+          <span id="selCtx" class="ctx-chip sel" hidden>
+            <span class="sel-text"></span>
+            <button type="button" id="clearSel" aria-label="Remove selection">×</button>
+          </span>
+        </div>
+        <textarea id="input" rows="1" placeholder="Ask about this PDF…  ( / to focus )"></textarea>
+        <div class="composer-foot">
+          <div class="quick">
+            <button type="button" class="quick-btn" data-q="Explain the selected text in simple terms." data-needs-sel>Explain selection</button>
+            <button type="button" class="quick-btn" data-q="Summarize this page.">Summarize page</button>
+          </div>
+          <button id="sendBtn" class="send" type="submit" aria-label="Send">
+            <svg class="i-send" viewBox="0 0 20 20"><path d="M4 10h11M10 5l5 5-5 5"/></svg>
+            <svg class="i-stop" viewBox="0 0 20 20"><rect x="5.5" y="5.5" width="9" height="9" rx="1.5"/></svg>
+          </button>
+        </div>
+      </form>
+    </aside>
+  </main>
+</body>
+</html>
