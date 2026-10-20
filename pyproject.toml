@@ -1,13 +1,13 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pagelight"
 version = "0.1.0"
-description = "Ask your PDFs anything, completely offline. A PDF reader with a local LLM chat that cites pages."
+description = "Ask your PDFs anything, completely offline."
 readme = "README.md"
-license = { text = "AGPL-3.0-or-later" }
+license = "AGPL-3.0-or-later"
 keywords = ["pdf", "llm", "offline", "local", "rag", "ollama", "llama", "reader"]
 requires-python = ">=3.9"
 dependencies = ["pymupdf>=1.24"]
