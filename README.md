@@ -2,7 +2,7 @@
 
 **Ask your PDF anything, completely offline.**
 
-[//]: # "Add a screenshot or short GIF of the reader here, e.g. docs/screenshot.png showing the PDF on the left and the chat with page citations on the right."
+![pagelight answering a question with page citations](docs/demo.gif)
 
 ---
 
