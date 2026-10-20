@@ -1,5 +1,6 @@
 import * as pdfjsLib from "./vendor/pdfjs/pdf.min.mjs";
 import { render } from "./md.js";
+import { claimFor, clearHighlight, findPassage, flashPage, flashPassage } from "./cite.js";
 
 globalThis.pdfjsLib = pdfjsLib; // pdf_viewer.mjs reads the library from the global
 const { EventBus, PDFViewer, PDFLinkService, PDFFindController } = await import("./vendor/pdfjs/pdf_viewer.mjs");
@@ -74,7 +75,7 @@ eventBus.on("pagesinit", () => {
   if (start > 1 && start <= viewer.pagesCount) viewer.currentPageNumber = start;
   zoomLabel();
 });
-eventBus.on("scalechanging", zoomLabel);
+eventBus.on("scalechanging", () => { zoomLabel(); clearHighlight(); });
 eventBus.on("pagechanging", ({ pageNumber }) => setPage(pageNumber));
 eventBus.on("updatefindmatchescount", ({ matchesCount }) => showFindCount(matchesCount));
 eventBus.on("updatefindcontrolstate", ({ matchesCount, state: s }) => {
@@ -97,8 +98,57 @@ function goToPage(n) {
   viewer.currentPageNumber = n;
 }
 function goTo(doc, page) {
-  if (doc != null && doc !== state.cur && state.docs[doc]) openDoc(doc, page);
-  else goToPage(page);
+  if (doc != null && doc !== state.cur && state.docs[doc]) return openDoc(doc, page);
+  goToPage(page);
+  return Promise.resolve();
+}
+
+// Resolves with the page's text layer once pdf.js has rendered it (or null after a timeout).
+function textLayerFor(pageNumber, timeout = 6000) {
+  const ready = () => {
+    const div = viewer.getPageView?.(pageNumber - 1)?.textLayer?.div;
+    return div && div.querySelector(".endOfContent") ? div : null;
+  };
+  return new Promise((resolve) => {
+    const now = ready();
+    if (now) return resolve(now);
+    let timer;
+    const done = (v) => { eventBus.off("textlayerrendered", on); clearTimeout(timer); resolve(v); };
+    const on = (e) => { if (e.pageNumber === pageNumber && ready()) done(ready()); };
+    eventBus.on("textlayerrendered", on);
+    timer = setTimeout(() => done(ready()), timeout);
+  });
+}
+
+// Jump to a citation and highlight the passage on that page that supports it.
+let citeSeq = 0;
+async function showCitation(doc, page, claim) {
+  const seq = ++citeSeq;
+  $("toast")?.classList.remove("show");
+  await goTo(doc, page);
+  const layer = await textLayerFor(page);
+  if (seq !== citeSeq) return; // another citation was clicked meanwhile
+  const found = layer && findPassage(layer, claim);
+  if (!found?.segments.length || !flashPassage(found)) {
+    flashPage(layer?.closest(".page") || container.querySelector(`.page[data-page-number="${page}"]`));
+    toast(`Couldn't find the exact passage on page ${page}.`);
+  }
+}
+
+let toastTimer;
+function toast(text) {
+  let el = $("toast");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "toast";
+    el.className = "toast";
+    el.setAttribute("role", "status");
+    $("viewerWrap").appendChild(el);
+  }
+  el.textContent = text;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 2600);
 }
 
 async function openDoc(i, page = null) {
@@ -371,7 +421,13 @@ function renderAll() {
 
 msgsEl.addEventListener("click", (e) => {
   const b = e.target.closest("[data-page]");
-  if (b) { goTo(b.dataset.doc != null ? parseInt(b.dataset.doc, 10) : null, parseInt(b.dataset.page, 10)); return; }
+  if (b) {
+    const doc = b.dataset.doc != null ? parseInt(b.dataset.doc, 10) : null;
+    const page = parseInt(b.dataset.page, 10);
+    if (b.classList.contains("cite")) showCitation(doc, page, claimFor(b));
+    else goTo(doc, page);
+    return;
+  }
   const s = e.target.closest("[data-q]");
   if (s) ask(s.dataset.q);
 });

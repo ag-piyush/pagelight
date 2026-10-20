@@ -24,7 +24,7 @@ pagelight ~/papers/        # every PDF in a folder
 
 - **Reader and chat:** a full PDF viewer with selectable text, find, an outline, zoom and night mode, with a streaming chat beside it.
 - **Page awareness:** the model knows which page you're on. Select some text and click **Ask about this** to ask about that passage.
-- **Citations:** answers cite pages as `p. 12`, and clicking one jumps to the page.
+- **Citations:** answers cite pages as `p. 12`. Clicking one jumps to the page and highlights the passage the answer came from for a few seconds.
 - **Multiple PDFs:** open several files or a whole folder. Answers search all of them and cite the file and page, like `bert notes · p. 11`, and clicking a citation opens that file. You can switch files from the title menu, or limit answers to the PDF you're reading.
 - **Search:** short documents are given to the model in full. For long ones, pagelight uses hybrid search (BM25 plus local embeddings), which finds the right passages even when your question is worded differently from the text.
 - **Math:** LaTeX in answers is rendered with KaTeX.
@@ -133,7 +133,7 @@ If Ollama isn't running, pagelight starts it for you and stops it again when you
 | `Esc` | Stop the answer |
 | `←` / `→` | Previous / next page |
 | `Ctrl+F` / `Cmd+F` | Find in the PDF |
-| Citation chip | Jump to the cited page (and PDF) |
+| Citation chip | Jump to the cited page (and PDF) and highlight the passage |
 | Title menu, or `[` / `]` | Switch between open PDFs |
 | **All N PDFs** chip | Answer from every open PDF, or only the one you're reading |
 | Night mode toggle | Dim pages for reading at night |
@@ -205,7 +205,7 @@ flowchart LR
 1. **Extraction.** pagelight pulls the text out of each PDF page by page and splits it into overlapping chunks. A chunk never spans two pages, so every citation points at a real page.
 2. **Search.** Chunks are indexed with BM25. If you have an embedding model installed, they're embedded locally as well, and the two rankings are combined with reciprocal-rank fusion. Embeddings are cached in `~/.cache/pagelight/` by file hash, so opening the same PDF again is instant.
 3. **Context.** If the whole document fits in the context window, the model gets all of it. If it doesn't, the model gets the page you're on plus the best-matching passages from the rest of the document. For questions about "this page", it pulls in the neighbouring pages instead. With several PDFs, the search runs across all of them and spreads the results so one file can't crowd out the rest. Naming a file ("what does D2 say...") limits the search to it, and "compare" or "summarize" questions also include each file's first page and section starts.
-4. **Answer.** The model is asked to cite pages as `[p. 12]`, or `[D2 p. 12]` with several PDFs open, and the reader turns those into links.
+4. **Answer.** The model is asked to cite pages as `[p. 12]`, or `[D2 p. 12]` with several PDFs open, and the reader turns those into links. When you click one, the reader compares the sentence it's attached to with the text on that page, and highlights the closest matching sentence (or the quoted words, if the answer quotes the PDF). If nothing on the page matches well, it outlines the page instead.
 
 ## Privacy
 

@@ -324,3 +324,26 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
   .zoom { display: none; }
   :root { --chat-w: 340px; }
 }
+
+/* ---------- citation highlight ---------- */
+.cite-hl-layer { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
+.cite-hl {
+  position: absolute; border-radius: 3px;
+  background: rgba(233, 162, 59, 0.42);
+  box-shadow: 0 0 0 1px rgba(233, 162, 59, 0.5);
+  mix-blend-mode: multiply;
+  animation: cite-in 0.35s ease-out;
+  transition: opacity 0.9s ease;
+}
+.night .cite-hl { mix-blend-mode: normal; background: rgba(233, 162, 59, 0.35); }
+.cite-hl-layer.out .cite-hl { opacity: 0; }
+@keyframes cite-in { from { opacity: 0; transform: scale(1.04); } }
+.pdfViewer .page.cite-flash { box-shadow: 0 0 0 3px var(--amber), 0 4px 18px rgba(0, 0, 0, 0.08); transition: box-shadow 0.3s; }
+.toast {
+  position: absolute; left: 50%; bottom: 18px; z-index: 16;
+  transform: translate(-50%, 8px); opacity: 0; pointer-events: none;
+  max-width: min(520px, 90%); padding: 8px 14px; border-radius: 8px;
+  background: var(--ink); color: var(--surface); font-size: 12.5px; box-shadow: var(--shadow);
+  transition: opacity 0.2s, transform 0.2s;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }

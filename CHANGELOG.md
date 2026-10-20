@@ -14,6 +14,7 @@ Multiple PDFs.
 - Search keeps one file from taking every slot, so comparisons cover each document.
 - Terminal mode gains `:docs`, `:d N` and `:scope all|doc`.
 - Chat history is remembered per set of PDFs.
+- Clicking a citation scrolls to the passage it refers to and highlights it for a few seconds. If nothing on the page matches the cited sentence, the page outline flashes instead.
 
 ## 0.1.0
 
