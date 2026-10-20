@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pagelight"
 version = "0.1.0"
-description = "Ask your PDFs anything, completely offline."
+description = "Ask your PDF anything, completely offline."
 readme = "README.md"
 license = "AGPL-3.0-or-later"
 keywords = ["pdf", "llm", "offline", "local", "rag", "ollama", "llama", "reader"]
