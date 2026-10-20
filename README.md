@@ -1,12 +1,12 @@
 # pagelight
 
-**Ask your PDF anything, completely offline.**
+**Ask your PDFs anything, completely offline.**
 
 ![pagelight answering a question with page citations](docs/demo.gif)
 
 ---
 
-pagelight is a PDF reader with a local language model built in. You open a PDF from the terminal, it shows up in your browser, and there's a chat panel next to the page. You can ask about the page you're on, a passage you've selected, or anything else in the document. Answers cite the pages they came from, and clicking a citation takes you to that page.
+pagelight is a PDF reader with a local language model built in. You open a PDF (or a whole folder of them) from the terminal, it shows up in your browser, and there's a chat panel next to the page. You can ask about the page you're on, a passage you've selected, or anything else in your PDFs. Answers cite the pages they came from, and clicking a citation takes you to that page.
 
 Most chat-with-your-PDF tools upload your file to a server somewhere. That's a problem if the PDF is a contract, a medical record, an unpublished paper, or anything else you'd like to keep private. pagelight runs everything on your own machine: the rendering, the search and the model. Once you've downloaded a model, you can turn off Wi-Fi and it still works.
 
@@ -17,6 +17,7 @@ Most chat-with-your-PDF tools upload your file to a server somewhere. That's a p
 
 ```bash
 pagelight paper.pdf
+pagelight ~/papers/        # every PDF in a folder
 ```
 
 ## Features
@@ -24,9 +25,10 @@ pagelight paper.pdf
 - **Reader and chat:** a full PDF viewer with selectable text, find, an outline, zoom and night mode, with a streaming chat beside it.
 - **Page awareness:** the model knows which page you're on. Select some text and click **Ask about this** to ask about that passage.
 - **Citations:** answers cite pages as `p. 12`, and clicking one jumps to the page.
+- **Multiple PDFs:** open several files or a whole folder. Answers search all of them and cite the file and page, like `bert notes · p. 11`, and clicking a citation opens that file. You can switch files from the title menu, or limit answers to the PDF you're reading.
 - **Search:** short documents are given to the model in full. For long ones, pagelight uses hybrid search (BM25 plus local embeddings), which finds the right passages even when your question is worded differently from the text.
 - **Math:** LaTeX in answers is rendered with KaTeX.
-- **Resume:** your chat history and last page are saved for each PDF.
+- **Resume:** your last page is saved for each PDF, and your chat history for each set of PDFs you open together.
 - **Terminal mode:** `pagelight paper.pdf -t` gives you the same Q&A in the terminal.
 
 ## Installation
@@ -102,7 +104,11 @@ pipx install .
 # Open the reader (it resumes at the page you last read)
 pagelight paper.pdf
 
-# Open at a specific page
+# Open several PDFs, or every PDF in a folder (subfolders included)
+pagelight a.pdf b.pdf c.pdf
+pagelight ~/papers/
+
+# Open at a specific page (of the first PDF)
 pagelight book.pdf --page 120
 
 # Choose a model
@@ -127,7 +133,9 @@ If Ollama isn't running, pagelight starts it for you and stops it again when you
 | `Esc` | Stop the answer |
 | `←` / `→` | Previous / next page |
 | `Ctrl+F` / `Cmd+F` | Find in the PDF |
-| Citation chip | Jump to the cited page |
+| Citation chip | Jump to the cited page (and PDF) |
+| Title menu, or `[` / `]` | Switch between open PDFs |
+| **All N PDFs** chip | Answer from every open PDF, or only the one you're reading |
 | Night mode toggle | Dim pages for reading at night |
 
 Chat history and your last page are stored in your browser's local storage.
@@ -143,6 +151,15 @@ p12 › :clear        forget the conversation
 p12 › :q            quit
 ```
 
+With several PDFs, the prompt shows which one you're reading, and there are a few more commands:
+
+```text
+$ pagelight a.pdf b.pdf -t
+D1 p1 › :docs          list the open PDFs
+D1 p1 › :d 2           switch to the second PDF
+D2 p1 › :scope doc     answer from this PDF only (:scope all to undo)
+```
+
 ### Using llama.cpp, LM Studio or vLLM
 
 Start any OpenAI-compatible server locally and point pagelight at it:
@@ -155,7 +172,7 @@ pagelight paper.pdf --backend openai --url http://127.0.0.1:8080
 ### All options
 
 ```text
-pagelight PDF
+pagelight PDF_OR_FOLDER [PDF_OR_FOLDER ...]
 
   -m, --model NAME         chat model (default: best installed Llama)
   --backend ollama|openai  model server type (default: ollama)
@@ -164,7 +181,7 @@ pagelight PDF
   --embed-model NAME       embedding model (default: auto-detect, e.g. nomic-embed-text)
   --no-embed               keyword search only
   -p, --port N             reader port (default: 7337)
-  --page N                 open at this page
+  --page N                 open the first PDF at this page
   -t, --terminal           ask in the terminal instead of opening the reader
   --no-browser             start the reader without opening a browser tab
   --temperature T          sampling temperature (default: 0.2)
@@ -176,7 +193,7 @@ pagelight PDF
 
 ```mermaid
 flowchart LR
-    PDF[PDF file] --> X[Text extraction<br/>PyMuPDF]
+    PDF[PDF files] --> X[Text extraction<br/>PyMuPDF]
     X --> C[Page-aligned chunks]
     C --> S[Hybrid search<br/>BM25 + local embeddings]
     Q[Your question<br/>+ page + selection] --> S
@@ -185,10 +202,10 @@ flowchart LR
     M --> R[Answer with<br/>clickable citations]
 ```
 
-1. **Extraction.** pagelight pulls the text out page by page and splits it into overlapping chunks. A chunk never spans two pages, so every citation points at a real page.
+1. **Extraction.** pagelight pulls the text out of each PDF page by page and splits it into overlapping chunks. A chunk never spans two pages, so every citation points at a real page.
 2. **Search.** Chunks are indexed with BM25. If you have an embedding model installed, they're embedded locally as well, and the two rankings are combined with reciprocal-rank fusion. Embeddings are cached in `~/.cache/pagelight/` by file hash, so opening the same PDF again is instant.
-3. **Context.** If the whole document fits in the context window, the model gets all of it. If it doesn't, the model gets the page you're on plus the best-matching passages from the rest of the document. For questions about "this page", it pulls in the neighbouring pages instead.
-4. **Answer.** The model is asked to cite pages as `[p. 12]`, and the reader turns those into links.
+3. **Context.** If the whole document fits in the context window, the model gets all of it. If it doesn't, the model gets the page you're on plus the best-matching passages from the rest of the document. For questions about "this page", it pulls in the neighbouring pages instead. With several PDFs, the search runs across all of them and spreads the results so one file can't crowd out the rest. Naming a file ("what does D2 say...") limits the search to it, and "compare" or "summarize" questions also include each file's first page and section starts.
+4. **Answer.** The model is asked to cite pages as `[p. 12]`, or `[D2 p. 12]` with several PDFs open, and the reader turns those into links.
 
 ## Privacy
 
@@ -201,7 +218,6 @@ Here's what keeps your documents on your machine:
 
 ## Limitations
 
-- **One PDF at a time.** Each session opens a single document.
 - **Scanned PDFs need OCR first.** pagelight reads the text layer, and image-only pages don't have one. Run them through [OCRmyPDF](https://github.com/ocrmypdf/OCRmyPDF) once (`ocrmypdf scan.pdf scan-ocr.pdf`), which also works offline.
 - **Text only.** The model can't see figures, charts or images, and tables come through as plain text.
 - **Small models make mistakes.** Answers are based on the cited pages, but a 3B or 8B model can still misread or overstate things. Check the citations for anything that matters.
@@ -234,7 +250,7 @@ Here's where things live:
 | Path | Contents |
 |---|---|
 | `pagelight/cli.py` | Command-line entry point and terminal mode |
-| `pagelight/document.py` | PDF loading, text cleanup, page-aligned chunking |
+| `pagelight/document.py` | PDF and folder loading, text cleanup, page-aligned chunking |
 | `pagelight/retrieval.py` | BM25, embedding index with on-disk cache, hybrid search |
 | `pagelight/prompts.py` | Decides what the model reads for each question |
 | `pagelight/llm.py` | Ollama and OpenAI-compatible clients, local-only guard |

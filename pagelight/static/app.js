@@ -21,13 +21,26 @@ const store = {
 
 const state = {
   info: null,
+  docs: [],
+  cur: 0, // index of the PDF in the viewer
   page: 1,
+  scope: "all", // "all" PDFs or just the current "doc"
   selection: "",
   selectionPage: null,
+  selectionDoc: null,
   messages: [],
   busy: false,
   abort: null,
 };
+const multi = () => state.docs.length > 1;
+const curDoc = () => state.docs[state.cur];
+
+// short, human name for citation chips: file name without extension, trimmed
+function shortName(d) {
+  const base = d.file.replace(/\.pdf$/i, "").replace(/[_-]+/g, " ").trim();
+  return base.length > 18 ? `${base.slice(0, 17)}…` : base;
+}
+const renderCtx = (defaultDoc) => ({ defaultDoc, docs: state.docs.map((d) => ({ short: d.short, title: d.title })) });
 
 // ---------------------------------------------------------------- viewer
 pdfjsLib.GlobalWorkerOptions.workerSrc = abs("/static/vendor/pdfjs/pdf.worker.min.mjs");
@@ -47,11 +60,17 @@ const viewer = new PDFViewer({
 });
 linkService.setViewer(viewer);
 
+let pdfDoc = null;
+const dispose = (pdf) => { try { pdf?.loadingTask?.destroy?.(); } catch {} };
+let pendingPage = null;
+let loadSeq = 0;
+
 const zoomLabel = () => { $("zoomLabel").textContent = `${Math.round(viewer.currentScale * 100)}%`; };
 
 eventBus.on("pagesinit", () => {
   viewer.currentScaleValue = "page-width";
-  const start = state.info.startPage || store.get(`pagelight:page:${state.info.docId}`, 1);
+  const start = pendingPage || store.get(`pagelight:page:${curDoc().docId}`, 1);
+  pendingPage = null;
   if (start > 1 && start <= viewer.pagesCount) viewer.currentPageNumber = start;
   zoomLabel();
 });
@@ -70,18 +89,33 @@ function showFindCount(mc) {
 function setPage(n) {
   state.page = n;
   $("pageInput").value = n;
-  $("pageCtx").textContent = `Page ${n}`;
-  if (state.info) store.set(`pagelight:page:${state.info.docId}`, n);
+  updateContextChips();
+  if (curDoc()) store.set(`pagelight:page:${curDoc().docId}`, n);
 }
 function goToPage(n) {
   n = Math.max(1, Math.min(viewer.pagesCount || 1, n | 0));
   viewer.currentPageNumber = n;
 }
+function goTo(doc, page) {
+  if (doc != null && doc !== state.cur && state.docs[doc]) openDoc(doc, page);
+  else goToPage(page);
+}
 
-async function openPdf() {
+async function openDoc(i, page = null) {
+  const seq = ++loadSeq;
+  const d = state.docs[i];
+  state.cur = i;
+  pendingPage = page;
+  store.set(`pagelight:cur:${state.info.libraryId}`, i);
+  $("viewerError").hidden = true;
+  showDocHeader();
+  buildToc(d.outline);
+  $("findInput").value = ""; $("findCount").textContent = "";
+  askPop.hidden = true; pendingSel = null;
+  updateQuick();
   try {
     const task = pdfjsLib.getDocument({
-      url: "/doc.pdf",
+      url: `/doc/${i}.pdf`,
       httpHeaders: { "X-Session-Token": TOKEN },
       cMapUrl: abs("/static/vendor/pdfjs/cmaps/"),
       cMapPacked: true,
@@ -94,13 +128,18 @@ async function openPdf() {
       disableStream: true,
     });
     const pdf = await task.promise;
+    if (seq !== loadSeq) { dispose(pdf); return; } // user already switched again
+    const old = pdfDoc;
+    pdfDoc = pdf;
     viewer.setDocument(pdf);
     linkService.setDocument(pdf, null);
     $("pageCount").textContent = pdf.numPages;
+    if (old) dispose(old);
   } catch (e) {
+    if (seq !== loadSeq) return;
     const el = $("viewerError");
     el.hidden = false;
-    el.textContent = `Couldn't render this PDF: ${e.message || e}`;
+    el.textContent = `Couldn't render ${d.file}: ${e.message || e}`;
   }
 }
 
@@ -122,7 +161,7 @@ $("nightBtn").onclick = (e) => {
 if (store.get("pagelight:night", false)) { document.body.classList.add("night"); $("nightBtn").setAttribute("aria-pressed", "true"); }
 
 let findTimer;
-$("findInput").addEventListener("input", (e) => {
+$("findInput").addEventListener("input", () => {
   clearTimeout(findTimer);
   findTimer = setTimeout(() => dispatchFind("", false), 180);
 });
@@ -137,12 +176,52 @@ function dispatchFind(type, findPrevious) {
   });
 }
 
-// contents (outline from the server's parse)
+// popovers: document switcher + contents
+function closePopovers(except) {
+  for (const id of ["docPanel", "tocPanel"]) if ($(id) !== except) $(id).hidden = true;
+}
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".popover") && !e.target.closest("#docBtn, #tocBtn")) closePopovers();
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePopovers(); });
+
+function showDocHeader() {
+  const d = curDoc();
+  $("docTitle").textContent = d.title;
+  $("docBtn").title = multi() ? `${d.title} — ${d.file}\nClick to switch PDF` : `${d.title} — ${d.file}`;
+  $("docLabel").hidden = !multi();
+  $("docLabel").textContent = d.label;
+  document.title = `${d.title} · pagelight`;
+  for (const b of $("docPanel").querySelectorAll("button")) b.setAttribute("aria-selected", +b.dataset.doc === state.cur);
+  updateContextChips();
+}
+
+function buildDocList() {
+  const btn = $("docBtn"), panel = $("docPanel");
+  if (!multi()) return;
+  btn.disabled = false;
+  panel.innerHTML = "";
+  for (const d of state.docs) {
+    const b = document.createElement("button");
+    b.dataset.doc = d.index;
+    b.setAttribute("role", "option");
+    b.innerHTML = `<span class="lbl"></span><span class="info"><span class="t"></span><span class="f"></span></span>`;
+    b.querySelector(".lbl").textContent = d.label;
+    b.querySelector(".t").textContent = d.title;
+    b.querySelector(".f").textContent = `${d.file} · ${d.pages} pages`;
+    if (d.scanned) b.querySelector(".f").insertAdjacentHTML("beforeend", ` · <span class="warn">no text layer</span>`);
+    b.onclick = () => { panel.hidden = true; if (d.index !== state.cur) openDoc(d.index); };
+    panel.appendChild(b);
+  }
+  btn.onclick = (e) => { e.stopPropagation(); closePopovers(panel); panel.hidden = !panel.hidden; };
+}
+
 function buildToc(outline) {
-  if (!outline?.length) return;
   const btn = $("tocBtn"), panel = $("tocPanel");
-  btn.hidden = false;
-  for (const item of outline) {
+  panel.innerHTML = "";
+  panel.hidden = true;
+  btn.hidden = !outline?.length;
+  for (const item of outline || []) {
     const b = document.createElement("button");
     b.style.paddingLeft = `${8 + (item.level - 1) * 14}px`;
     b.innerHTML = `<span class="t"></span><span class="p">${item.page}</span>`;
@@ -150,8 +229,7 @@ function buildToc(outline) {
     b.onclick = () => { goToPage(item.page); panel.hidden = true; };
     panel.appendChild(b);
   }
-  btn.onclick = (e) => { e.stopPropagation(); panel.hidden = !panel.hidden; };
-  document.addEventListener("click", (e) => { if (!panel.contains(e.target)) panel.hidden = true; });
+  btn.onclick = (e) => { e.stopPropagation(); closePopovers(panel); panel.hidden = !panel.hidden; };
 }
 
 // ---------------------------------------------------------------- selection → ask
@@ -168,12 +246,12 @@ function readSelection() {
   const node = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement;
   const pageEl = node?.closest?.(".page");
   const page = pageEl ? parseInt(pageEl.dataset.pageNumber, 10) : state.page;
-  return { text, page, rect: range.getBoundingClientRect() };
+  return { text, page, doc: state.cur, rect: range.getBoundingClientRect() };
 }
 
 container.addEventListener("mouseup", () => setTimeout(() => {
   const s = readSelection();
-  if (!s) { askPop.hidden = true; pendingSel = null; return; }
+  if (!s) { askPop.hidden = true; pendingSel = null; updateQuick(); return; }
   pendingSel = s;
   updateQuick();
   const wrap = $("viewerWrap").getBoundingClientRect();
@@ -184,15 +262,16 @@ container.addEventListener("mouseup", () => setTimeout(() => {
 container.addEventListener("scroll", () => { askPop.hidden = true; }, { passive: true });
 askPop.addEventListener("mousedown", (e) => e.preventDefault()); // keep the selection alive
 askPop.onclick = () => {
-  if (pendingSel) attachSelection(pendingSel.text, pendingSel.page);
+  if (pendingSel) attachSelection(pendingSel);
   askPop.hidden = true;
   showChat(true);
   $("input").focus();
 };
 
-function attachSelection(text, page) {
+function attachSelection({ text, page, doc }) {
   state.selection = text.slice(0, 6000);
   state.selectionPage = page;
+  state.selectionDoc = doc;
   const chip = $("selCtx");
   chip.hidden = false;
   chip.querySelector(".sel-text").textContent = `“${text.slice(0, 90)}${text.length > 90 ? "…" : ""}”`;
@@ -200,7 +279,7 @@ function attachSelection(text, page) {
   updateQuick();
 }
 function clearSelection() {
-  state.selection = ""; state.selectionPage = null;
+  state.selection = ""; state.selectionPage = null; state.selectionDoc = null;
   $("selCtx").hidden = true;
   updateQuick();
 }
@@ -209,11 +288,26 @@ function updateQuick() {
   document.querySelectorAll("[data-needs-sel]").forEach((b) => { b.disabled = !state.selection && !pendingSel; });
 }
 
+// context row: which PDFs + which page
+function updateContextChips() {
+  if (!curDoc()) return;
+  $("pageCtx").textContent = multi() ? `${curDoc().short} · p. ${state.page}` : `Page ${state.page}`;
+  const sc = $("scopeChip");
+  sc.hidden = !multi();
+  sc.textContent = state.scope === "doc" ? `Only ${curDoc().label}` : `All ${state.docs.length} PDFs`;
+}
+$("scopeChip").onclick = () => {
+  state.scope = state.scope === "doc" ? "all" : "doc";
+  store.set(`pagelight:scope:${state.info.libraryId}`, state.scope);
+  updateContextChips();
+  $("input").focus();
+};
+
 // ---------------------------------------------------------------- chat
 const msgsEl = $("messages");
 const input = $("input");
 
-function chatKey() { return `pagelight:chat:${state.info.docId}`; }
+function chatKey() { return `pagelight:chat:${state.info.libraryId}`; }
 function save() { store.set(chatKey(), state.messages.slice(-60)); }
 
 function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
@@ -227,7 +321,8 @@ function renderMessage(m) {
   }
   const wrap = el("div", `msg assistant${m.error ? " error" : ""}`);
   const body = el("div", "body");
-  if (m.error) body.textContent = m.content; else body.innerHTML = render(m.content);
+  if (m.error) body.textContent = m.content;
+  else body.innerHTML = render(m.content, renderCtx(m.meta?.doc ?? 0));
   wrap.appendChild(body);
   if (m.meta) wrap.appendChild(renderMeta(m.meta));
   return wrap;
@@ -235,16 +330,33 @@ function renderMessage(m) {
 
 function renderMeta(meta) {
   const d = el("div", "meta");
-  if (meta.pages?.length) {
-    const p = el("span", "pages");
-    p.append(meta.mode === "full-document" ? "Read whole document" : "Context:");
-    if (meta.mode !== "full-document") {
-      for (const n of meta.pages.slice(0, 14)) {
-        const b = el("button"); b.textContent = `p.${n}`; b.dataset.page = n; p.appendChild(b);
+  const sources = meta.sources || [];
+  if (sources.length) {
+    const box = el("span", "pages");
+    const docsUsed = [...new Set(sources.map(([di]) => di))];
+    if (meta.mode === "full-document") {
+      box.append(docsUsed.length > 1 ? `Read all ${docsUsed.length} documents` : "Read whole document");
+    } else {
+      box.append("Context:");
+      let shown = 0;
+      for (const di of docsUsed) {
+        if (shown >= 16) break;
+        const grp = el("span", "grp");
+        if (multi()) {
+          const dn = el("span", "dn");
+          dn.textContent = state.docs[di]?.short ?? `D${di + 1}`;
+          grp.appendChild(dn);
+        }
+        for (const [dj, p] of sources) {
+          if (dj !== di || shown >= 16) continue;
+          shown++;
+          const b = el("button"); b.textContent = `p.${p}`; b.dataset.doc = di; b.dataset.page = p; grp.appendChild(b);
+        }
+        box.appendChild(grp);
       }
-      if (meta.pages.length > 14) p.append(` +${meta.pages.length - 14}`);
+      if (sources.length > 16) box.append(` +${sources.length - 16} more`);
     }
-    d.appendChild(p);
+    d.appendChild(box);
   }
   if (meta.tps) d.appendChild(el("span", null, `${meta.tokens} tok · ${meta.tps} tok/s`));
   return d;
@@ -259,12 +371,12 @@ function renderAll() {
 
 msgsEl.addEventListener("click", (e) => {
   const b = e.target.closest("[data-page]");
-  if (b) { goToPage(parseInt(b.dataset.page, 10)); return; }
+  if (b) { goTo(b.dataset.doc != null ? parseInt(b.dataset.doc, 10) : null, parseInt(b.dataset.page, 10)); return; }
   const s = e.target.closest("[data-q]");
   if (s) ask(s.dataset.q);
 });
 document.querySelectorAll(".quick-btn").forEach((b) => b.addEventListener("click", () => {
-  if (b.hasAttribute("data-needs-sel") && !state.selection && pendingSel) attachSelection(pendingSel.text, pendingSel.page);
+  if (b.hasAttribute("data-needs-sel") && !state.selection && pendingSel) attachSelection(pendingSel);
   ask(b.dataset.q);
 }));
 
@@ -293,11 +405,12 @@ function setBusy(b) {
 async function ask(question) {
   if (state.busy || !state.info) return;
   const selection = state.selection;
-  const page = state.selectionPage || state.page;
+  const doc = state.selection ? state.selectionDoc : state.cur;
+  const page = state.selection ? state.selectionPage : state.page;
   const history = state.messages.filter((m) => !m.error).slice(-10).map(({ role, content }) => ({ role, content }));
 
   state.messages.push({ role: "user", content: question, selection: selection ? selection.slice(0, 300) : undefined });
-  const reply = { role: "assistant", content: "" };
+  const reply = { role: "assistant", content: "", meta: { doc } };
   state.messages.push(reply);
   input.value = ""; autosize();
   pendingSel = null; askPop.hidden = true;
@@ -315,7 +428,7 @@ async function ask(question) {
   const paint = () => {
     raf = 0;
     const stick = msgsEl.scrollHeight - msgsEl.scrollTop - msgsEl.clientHeight < 60;
-    body.innerHTML = render(reply.content);
+    body.innerHTML = render(reply.content, renderCtx(reply.meta.doc));
     body.classList.add("cursor");
     if (stick) msgsEl.scrollTop = msgsEl.scrollHeight;
   };
@@ -323,7 +436,7 @@ async function ask(question) {
   try {
     const res = await api("/api/ask", {
       method: "POST",
-      body: JSON.stringify({ question, page, selection, history }),
+      body: JSON.stringify({ question, doc, page, selection, history, scope: state.scope }),
       signal: state.abort.signal,
     });
     const reader = res.body.getReader();
@@ -338,9 +451,9 @@ async function ask(question) {
         const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
         if (!line.trim()) continue;
         const ev = JSON.parse(line);
-        if (ev.type === "meta") reply.meta = { pages: ev.pages, mode: ev.mode };
+        if (ev.type === "meta") reply.meta = { sources: ev.sources, mode: ev.mode, multi: ev.multi, doc: ev.doc };
         else if (ev.type === "delta") { reply.content += ev.text; if (!raf) raf = requestAnimationFrame(paint); }
-        else if (ev.type === "done") Object.assign(reply.meta ||= {}, { tokens: ev.tokens, tps: ev.tps });
+        else if (ev.type === "done") Object.assign(reply.meta, { tokens: ev.tokens, tps: ev.tps });
         else if (ev.type === "error") { reply.error = true; reply.content = ev.message; }
       }
     }
@@ -391,37 +504,62 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "/") { e.preventDefault(); showChat(true); input.focus(); }
   else if (e.key === "ArrowRight" && !e.altKey) { viewer.nextPage(); }
   else if (e.key === "ArrowLeft" && !e.altKey) { viewer.previousPage(); }
+  else if (multi() && (e.key === "]" || e.key === "[")) {
+    const n = state.docs.length;
+    openDoc((state.cur + (e.key === "]" ? 1 : n - 1)) % n);
+  }
 });
 
 // ---------------------------------------------------------------- boot
-function showInfo(info) {
-  $("docTitle").textContent = info.title;
-  $("docTitle").title = `${info.title} — ${info.file}`;
-  document.title = `${info.title} · pagelight`;
+function showStatus(info) {
   $("modelChip").textContent = info.model;
   $("modelChip").title = `${info.model} via ${info.backend}, context ${info.ctx} tokens`;
   const chip = $("searchChip");
-  if (info.indexError) {
-    chip.textContent = "keyword search"; chip.className = "chip warn"; chip.title = `Embedding failed: ${info.indexError}`;
-  } else if (info.retrieval.startsWith("bm25 (")) {
+  if (info.retrieval.startsWith("bm25 (")) {
     chip.textContent = `indexing ${Math.round((info.indexProgress || 0) * 100)}%`; chip.className = "chip"; chip.title = `Embedding with ${info.embedModel}`;
+  } else if (info.indexError && info.retrieval !== "hybrid") {
+    chip.textContent = "keyword search"; chip.className = "chip warn"; chip.title = `Embedding failed: ${info.indexError}`;
   } else {
     chip.textContent = info.retrieval === "hybrid" ? "semantic + keyword" : "keyword search";
-    chip.className = "chip"; chip.title = info.embedModel ? `Embeddings: ${info.embedModel}` : "Pull an embedding model (e.g. nomic-embed-text) for semantic search";
+    chip.className = info.indexError ? "chip warn" : "chip";
+    chip.title = info.indexError ? `Some PDFs use keyword search only: ${info.indexError}`
+      : info.embedModel ? `Embeddings: ${info.embedModel}` : "Pull an embedding model (e.g. nomic-embed-text) for semantic search";
+  }
+}
+
+function setupEmptyState() {
+  if (!multi()) return;
+  $("input").placeholder = "Ask about these PDFs…  ( / to focus )";
+  $("emptyTitle").textContent = `Ask anything about these ${state.docs.length} PDFs`;
+  $("emptySub").textContent = "Answers search across every PDF and cite the file and page they came from. Switch PDFs from the title menu, or narrow answers to the one you're reading with the scope chip below.";
+  const qs = [
+    ["Summarize this page.", "Summarize this page"],
+    ["What is each of these documents about? One or two lines each.", "What is each document about?"],
+    ["Compare these documents: where do they agree and where do they differ?", "Compare the documents"],
+    ["Explain the key terms and concepts on this page.", "Explain key terms here"],
+  ];
+  $("suggestions").innerHTML = "";
+  for (const [q, label] of qs) {
+    const b = el("button"); b.dataset.q = q; b.textContent = label; $("suggestions").appendChild(b);
   }
 }
 
 async function boot() {
   state.info = await (await api("/api/info")).json();
-  showInfo(state.info);
-  buildToc(state.info.outline);
+  state.docs = state.info.docs.map((d) => ({ ...d, short: shortName(d) }));
+  state.scope = store.get(`pagelight:scope:${state.info.libraryId}`, "all");
+  showStatus(state.info);
+  buildDocList();
+  setupEmptyState();
   state.messages = store.get(chatKey(), []);
   renderAll();
   updateQuick();
-  await openPdf();
+  const startDoc = Math.min(store.get(`pagelight:cur:${state.info.libraryId}`, 0), state.docs.length - 1);
+  const startPage = state.info.startPage || null; // --page applies to the first PDF
+  await openDoc(startPage ? 0 : startDoc, startPage);
   const poll = setInterval(async () => {
     if (!state.info.retrieval.startsWith("bm25 (")) return clearInterval(poll);
-    try { state.info = await (await api("/api/info")).json(); showInfo(state.info); } catch {}
+    try { state.info = await (await api("/api/info")).json(); showStatus(state.info); } catch {}
   }, 1500);
 }
 

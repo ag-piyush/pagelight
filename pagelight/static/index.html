@@ -16,7 +16,12 @@
   <header class="topbar">
     <div class="tb-left">
       <span class="mark" aria-hidden="true"></span>
-      <h1 id="docTitle" class="doc-title">Loading…</h1>
+      <button id="docBtn" class="doc-btn" disabled aria-haspopup="listbox" title="Switch PDF">
+        <span id="docLabel" class="doc-label" hidden></span>
+        <span id="docTitle" class="doc-title">Loading…</span>
+        <svg class="chev" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 8l4 4 4-4"/></svg>
+      </button>
+      <div id="docPanel" class="popover docs" role="listbox" hidden></div>
       <button id="tocBtn" class="icon-btn" title="Contents" aria-label="Contents" hidden>
         <svg viewBox="0 0 20 20"><path d="M3 5h14M3 10h10M3 15h12"/></svg>
       </button>
@@ -86,9 +91,9 @@
 
       <div id="messages" class="messages" aria-live="polite">
         <div id="emptyState" class="empty">
-          <p class="empty-title">Ask anything about this PDF</p>
-          <p class="empty-sub">Answers come from a model running on your machine and cite the pages they use. Select text in the document to ask about that passage.</p>
-          <div class="suggestions">
+          <p class="empty-title" id="emptyTitle">Ask anything about this PDF</p>
+          <p class="empty-sub" id="emptySub">Answers come from a model running on your machine and cite the pages they use. Select text in the document to ask about that passage.</p>
+          <div class="suggestions" id="suggestions">
             <button data-q="Summarize this page.">Summarize this page</button>
             <button data-q="What is this document about, and what are its main points?">What is this about?</button>
             <button data-q="Explain the key terms and concepts on this page.">Explain key terms here</button>
@@ -99,6 +104,7 @@
 
       <form id="composer" class="composer">
         <div class="context-row">
+          <button type="button" id="scopeChip" class="ctx-chip scope" hidden title="Which PDFs answers draw from — click to switch"></button>
           <span id="pageCtx" class="ctx-chip">Page 1</span>
           <span id="selCtx" class="ctx-chip sel" hidden>
             <span class="sel-text"></span>

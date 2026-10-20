@@ -2,6 +2,19 @@
 
 All notable changes to pagelight are listed here. Versions follow [semantic versioning](https://semver.org).
 
+## 0.2.0
+
+Multiple PDFs.
+
+- Open several PDFs or whole folders at once: `pagelight a.pdf b.pdf ~/papers/` (folders are searched recursively; duplicate files are skipped).
+- Answers search across every open PDF and cite the file and page, e.g. `bert notes · p. 11`. Clicking a citation opens that file at that page.
+- Switch between PDFs from the title menu, or with `[` and `]`.
+- **All N PDFs / Only D1** toggle to answer from every PDF or just the one you're reading.
+- Naming a file in a question ("summarize D3", "what does bert-notes say…") restricts the search to it; "compare" and "summarize" questions include each document's opening and section starts.
+- Search keeps one file from taking every slot, so comparisons cover each document.
+- Terminal mode gains `:docs`, `:d N` and `:scope all|doc`.
+- Chat history is remembered per set of PDFs.
+
 ## 0.1.0
 
 First release.

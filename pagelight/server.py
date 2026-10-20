@@ -7,8 +7,10 @@ browser can't talk to it.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import mimetypes
+import re
 import secrets
 import threading
 from dataclasses import dataclass, field
@@ -50,31 +52,44 @@ CSP = "; ".join(
 
 @dataclass
 class App:
-    doc: Document
+    docs: list[Document]
     retriever: Retriever
     client: object
     model: str
     embed_model: str | None
     ctx: int
-    start_page: int = 1
+    start_page: int = 0
     token: str = field(default_factory=lambda: secrets.token_urlsafe(24))
     port: int = 0
 
+    @property
+    def library_id(self) -> str:
+        """Stable id for this set of PDFs (chat history is stored per set)."""
+        return hashlib.sha256("|".join(sorted(d.sha for d in self.docs)).encode()).hexdigest()[:16]
+
     def info(self) -> dict:
-        emb = self.retriever.embed
+        r = self.retriever
         return {
-            "title": self.doc.title,
-            "file": self.doc.path.name,
-            "docId": self.doc.sha[:16],
-            "pages": self.doc.n_pages,
-            "chars": self.doc.n_chars,
-            "outline": self.doc.outline[:400],
+            "libraryId": self.library_id,
+            "docs": [
+                {
+                    "index": d.index,
+                    "label": d.label,
+                    "title": d.title,
+                    "file": d.path.name,
+                    "docId": d.sha[:16],
+                    "pages": d.n_pages,
+                    "outline": d.outline[:400],
+                    "scanned": d.looks_scanned,
+                }
+                for d in self.docs
+            ],
             "model": self.model,
             "backend": getattr(self.client, "kind", "?"),
             "embedModel": self.embed_model,
-            "retrieval": self.retriever.mode,
-            "indexProgress": round(emb.progress, 3) if emb else None,
-            "indexError": emb.error if emb else None,
+            "retrieval": r.mode,
+            "indexProgress": round(r.embed_progress, 3) if r.embed_progress is not None else None,
+            "indexError": r.embed_error,
             "ctx": self.ctx,
             "startPage": self.start_page,
         }
@@ -132,10 +147,14 @@ def make_handler(app: App):
                 return self._static(path[len("/static/"):])
             if path == "/favicon.ico":
                 return self._static("favicon.svg")
-            if path == "/doc.pdf":
+            m = re.fullmatch(r"/doc/(\d+)\.pdf", path)
+            if m:
                 if not self._token_ok():
                     return self._deny()
-                data = app.doc.path.read_bytes()
+                i = int(m.group(1))
+                if i >= len(app.docs):
+                    return self._deny(404, "not found")
+                data = app.docs[i].path.read_bytes()
                 return self._send(200, data, "application/pdf", {"Cache-Control": "no-store"})
             if path == "/api/info":
                 if not self._token_ok():
@@ -182,17 +201,20 @@ def make_handler(app: App):
                 self.wfile.flush()
 
             try:
+                doc_index = max(0, min(int(req.get("doc") or 0), len(app.docs) - 1))
                 built = prompts.build(
-                    app.doc,
+                    app.docs,
                     app.retriever,
                     question=question,
                     page=int(req.get("page") or 1),
                     selection=str(req.get("selection") or ""),
                     history=[m for m in req.get("history", []) if m.get("role") in ("user", "assistant")],
                     ctx_tokens=app.ctx,
+                    doc_index=doc_index,
+                    scope="doc" if req.get("scope") == "doc" else "all",
                 )
-                emit({"type": "meta", "pages": built.pages_used, "mode": built.mode,
-                      "retrieval": app.retriever.mode, "model": app.model})
+                emit({"type": "meta", "sources": built.sources, "mode": built.mode, "multi": built.multi,
+                      "doc": doc_index, "retrieval": app.retriever.mode, "model": app.model})
                 for piece in app.client.chat_stream(app.model, built.messages):
                     emit({"type": "delta", "text": piece})
                 u = app.client.last_usage
