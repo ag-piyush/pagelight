@@ -63,7 +63,7 @@ ollama pull nomic-embed-text     # optional, ~270 MB
 ### 2. Install pagelight
 
 ```bash
-pipx install git+https://github.com/ag-piyush/pagelight
+pipx install pagelight
 ```
 
 No pipx? Install it with `brew install pipx && pipx ensurepath` (or your distro's package manager), or run `pip install git+https://github.com/ag-piyush/pagelight` inside a virtual environment.
