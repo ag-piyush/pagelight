@@ -2,6 +2,10 @@
 
 All notable changes to pagelight are listed here. Versions follow [semantic versioning](https://semver.org).
 
+## 0.2.1
+
+- pagelight is now on PyPI: install with `pipx install pagelight` and update with `pipx upgrade pagelight`.
+
 ## 0.2.0
 
 Multiple PDFs.
