@@ -66,9 +66,9 @@ ollama pull nomic-embed-text     # optional, ~270 MB
 pipx install pagelight
 ```
 
-No pipx? Install it with `brew install pipx && pipx ensurepath` (or your distro's package manager), or run `pip install git+https://github.com/ag-piyush/pagelight` inside a virtual environment.
+No pipx? Install it with `brew install pipx && pipx ensurepath` (or your distro's package manager), or run `pip install pagelight` inside a virtual environment.
 
-To update, run the same `pipx install` command with `--force`.
+To update, run `pipx upgrade pagelight`.
 
 ### 3. Open a PDF
 
